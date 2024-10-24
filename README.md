@@ -48,3 +48,8 @@ You can run an example where the wheel's actions are sampled from a normal distr
 ```.py
 python run_simulator.py
 ```
+
+<h1>TODO</h1>
+
+1. Mario simulation marching
+2. Observation Func
