@@ -18,8 +18,8 @@ class MPMSolver:
         'STATIONARY': material_stationary,
     }
     objs = {
-        'CUBE': 0,
-        'SPIKES': 1,
+        'terrain': 0,
+        'sand': 1,
     }
     def __init__(self, n_particle, dim=2,
                  n_grid=64,

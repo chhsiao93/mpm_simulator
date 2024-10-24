@@ -94,8 +94,8 @@ def create_wheel_scene(dim = 2, dx=1/64, density_scale=1):
     material_sand = 3
     material_stationary = 4
     objs = {
-        'CUBE': 0,
-        'SPIKES': 1,
+        'terrain': 0,
+        'wheel': 1,
     }
     # Create initial state of wheel and sand
     mat = np.array([]) # material list
@@ -109,7 +109,7 @@ def create_wheel_scene(dim = 2, dx=1/64, density_scale=1):
     cube = add_curve_terrain(dx=dx, sample_density=2*dim**density_scale, min_val=0.2, max_val=0.4, dim=dim)
     mat = np.append(mat, np.ones(cube.shape[0]) * material_sand)
     clr = np.append(clr, np.ones(cube.shape[0]) * 0xFFFFFF)
-    obj = np.append(obj, np.ones(cube.shape[0]) * objs['CUBE'])
+    obj = np.append(obj, np.ones(cube.shape[0]) * objs['terrain'])
 
     ### add spikes/wheel and get particle positions for spikes
     fan_center = [0.2, 0.4] # center of the wheel/fan
@@ -122,7 +122,7 @@ def create_wheel_scene(dim = 2, dx=1/64, density_scale=1):
                             sample_density=4*dim**density_scale)
     mat = np.append(mat, np.ones(wheel.shape[0]) * material_elastic)
     clr = np.append(clr, np.ones(wheel.shape[0]) * 0xFFAAAA)
-    obj = np.append(obj, np.ones(wheel.shape[0]) * objs['SPIKES'])
+    obj = np.append(obj, np.ones(wheel.shape[0]) * objs['wheel'])
     xps = np.concatenate([cube, wheel], axis=0)
     scene = {}
     scene['num_particles'] = xps.shape[0]
