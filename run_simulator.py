@@ -3,12 +3,13 @@ import taichi as ti
 import numpy as np
 import utils
 import time
-
-state = utils.create_wheel_scene(density_scale=2)
+n_grid = 64
+dx = 1/n_grid
+state = utils.create_wheel_scene(density_scale=1, dim=2, dx=dx)
 
 ti.init(arch=ti.gpu)
 mpm = MPMSolver(dim=2,
-                n_grid=64,
+                n_grid=n_grid,
                 n_particle=state['num_particles'],
                 dt=1e-4,
                 target=[0.5, 0.2])

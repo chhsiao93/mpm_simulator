@@ -40,7 +40,7 @@ class MPMSolver:
         self.target = target # target position for the center of the wheel
 
         # Young's modulus and Poisson's ratio
-        self.E, self.nu = 1e2, 0.2
+        self.E, self.nu = 1e6, 0.2
         # Lame parameters
         self.mu_0, self.lambda_0 = self.E / (2.0 * (1.0 + self.nu)), self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
         # Sand parameters
@@ -90,7 +90,7 @@ class MPMSolver:
         #                         self.color)
 
     @ti.kernel
-    def set_w(self, omega: ti.f32):
+    def set_w(self, omega: ti.f32): # type: ignore
         self.compute_wheel_center()
         for p in range(self.n_particles):
             if (self.material[p] == self.material_elastic):
@@ -146,12 +146,12 @@ class MPMSolver:
             new_F = (ti.Matrix.diag(dim=2, val=1) + self.dt * self.C[p]) @ self.F[p]
             h = 1.0
             if self.material[p] == self.material_elastic:
-                h = 50000.0
+                h = 10.0
             mu, la = self.mu_0 * h, self.lambda_0 * h
             
             stress = ti.Matrix.zero(ti.f32, self.dim, self.dim)
             if self.material[p] == self.material_sand:
-                h = 0.1*ti.exp(10 * (1.0 - self.Jp[p])) #Hardening
+                h = 0.1*ti.exp(10 * (1.0 - self.Jp[p]))#Hardening
                 mu, la = self.mu_0 * h, self.lambda_0 * h
                 U, sig, V = ti.svd(new_F) 
                 
@@ -164,9 +164,9 @@ class MPMSolver:
                 center = ti.Matrix.zero(ti.f32, self.dim, self.dim)
                 for i in ti.static(range(self.dim)):
                     log_sig_sum += ti.log(sig_new[i, i])
-                    center[i,i] = 2.0 * mu * ti.log(sig_new[i, i]) * (1 / sig_new[i, i])
+                    center[i,i] = 2.0 * self.mu_0 * ti.log(sig_new[i, i]) * (1 / sig_new[i, i])
                 for i in ti.static(range(self.dim)):
-                    center[i,i] += la * log_sig_sum * (1 / sig_new[i, i])
+                    center[i,i] += self.lambda_0 * log_sig_sum * (1 / sig_new[i, i])
                 cauchy = U @ center @ V.transpose() @ self.F[p].transpose()
                         
                 stress = -(self.dt * self.p_vol * 4 * self.inv_dx * self.inv_dx) * cauchy
@@ -241,15 +241,15 @@ class MPMSolver:
     @ti.kernel
     def input_state(
         self,
-        num_particles: ti.i32,
-        pos: ti.types.ndarray(),
-        vel: ti.types.ndarray(),
-        material: ti.types.ndarray(),
-        color: ti.types.ndarray(),
-        object: ti.types.ndarray(),
-        C_np: ti.types.ndarray(),
-        J_np: ti.types.ndarray(),
-        F_np: ti.types.ndarray(),
+        num_particles: ti.i32, # type: ignore
+        pos: ti.types.ndarray(), # type: ignore
+        vel: ti.types.ndarray(), # type: ignore
+        material: ti.types.ndarray(), # type: ignore
+        color: ti.types.ndarray(), # type: ignore
+        object: ti.types.ndarray(), # type: ignore
+        C_np: ti.types.ndarray(), # type: ignore # type: ignore
+        J_np: ti.types.ndarray(), # type: ignore
+        F_np: ti.types.ndarray(), # type: ignore
         ):
         for i in range(num_particles):
             x = ti.Vector.zero(ti.f32, n=self.dim)

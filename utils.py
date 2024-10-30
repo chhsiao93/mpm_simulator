@@ -136,6 +136,54 @@ def create_wheel_scene(dim = 2, dx=1/64, density_scale=1):
     scene['J_np'] = (np.ones_like(mat) * (mat!=material_sand)).astype(np.float32)
     return scene
 
+def create_collide_scene(dim = 2, dx=1/64, density_scale=1):
+    material_water = 0
+    material_elastic = 1
+    material_snow = 2
+    material_sand = 3
+    material_stationary = 4
+    objs = {
+        'cube1': 0,
+        'cube2': 1,
+    }
+    # Create initial state of wheel and sand
+    mat = np.array([]) # material list
+    clr = np.array([]) # color list
+    obj = np.array([]) # object list
+    ### add a cube and get particle positions for a cube
+    cube1 = add_cube(lower_corner=[0.2, 0.2], 
+                            cube_size=[0.2, 0.2], 
+                            dx=dx, sample_density=density_scale*2**dim, 
+                            dim=dim)
+    
+    # cube = add_curve_terrain(dx=dx, sample_density=2*dim**density_scale, min_val=0.2, max_val=0.4, dim=dim)
+    mat = np.append(mat, np.ones(cube1.shape[0]) * material_sand)
+    clr = np.append(clr, np.ones(cube1.shape[0]) * 0xFFFFFF)
+    obj = np.append(obj, np.ones(cube1.shape[0]) * objs['cube1'])
+
+    cube2 = add_cube(lower_corner=[0.6, 0.22], 
+                            cube_size=[0.3, 0.25], 
+                            dx=dx, sample_density=density_scale*2**dim, 
+                            dim=dim)
+    mat = np.append(mat, np.ones(cube2.shape[0]) * material_sand)
+    clr = np.append(clr, np.ones(cube2.shape[0]) * 0xFFFFF0)
+    obj = np.append(obj, np.ones(cube2.shape[0]) * objs['cube2'])
+    xps = np.concatenate([cube1, cube2], axis=0)
+    scene = {}
+    scene['num_particles'] = xps.shape[0]
+    scene['pos'] = xps.astype(np.float32)
+    v0 = np.zeros_like(xps).astype(np.float32)
+    v0[obj==objs['cube1']] = np.array([2.3, 0.2])
+    v0[obj==objs['cube2']] = np.array([-2.0, 0.2])
+    scene['vel'] =  v0
+    scene['material'] = mat.astype(np.int32)
+    scene['color'] = clr.astype(np.int32)
+    scene['object'] = obj.astype(np.int32)
+    scene['C_np'] = np.zeros((scene['num_particles'], 2, 2)).astype(np.float32)
+    scene['F_np'] = np.tile(np.eye(2), (scene['num_particles'], 1, 1)).astype(np.float32)
+    scene['J_np'] = (np.ones_like(mat) * (mat!=material_sand)).astype(np.float32)
+    return scene
+
 def png_to_gif(png_dir, output_file, fps):
     images = []
     png_files = sorted((os.path.join(png_dir, f) for f in os.listdir(png_dir) if f.endswith('.png')))
