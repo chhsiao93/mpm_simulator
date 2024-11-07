@@ -30,26 +30,61 @@ import taichi as ti
 ti.init(arch=ti.gpu)
 mpm = MPMSolver(dim=2,
                 n_grid=64,
-                n_particle=state['num_particles'],
+                n_particle=5000,
                 dt=1e-4)
 
 ```
-<h2>Forward Step</h2>
+`n_particle` is a pre-defined parameter, which tells mpm solver the maximum number of particle it should handle. You can use a higher number for a high resolution scene (more particles)
 
-You can advance the simulation using `mpm.step()`, which takes the current state and the action (torque applied on wheel, in this case) as inputs and returns the updated state.
+<h2>Environment</h2>
+Create a Environment object to handle both the scene and the mpm solver.
 
 ```.py
-new_state = mpm.step(old_state, action, n_substeps=100)
+env = utils.Environment(state, mpm_solver=mpm)
+```
+
+<h3>States</h3>
+
+`env` stores the whole scene in `env.global_state`. It also stores the scene which is within the simulation scope, this allows simulation in a local scope without intense memory requirment. 
+
+<h3>Observation</h3>
+
+`env.observation` stores the important features such as `wheel_pos`, `wheel_vel`, `wheel_omega`, `dist_to_target`
+
+<h3>Forward Step</h2>
+
+You can advance the simulation using `env.step()`, which takes the current state and the action (torque applied on wheel, in this case) as inputs and returns the updated state.
+
+```.py
+env.step(action, n_substeps=100)
 ```
 `n_substeps` represents the number of steps in one forward simulation. Since the time step is very small (e.g., $dt=1×10^{−4}$), changing the action at every time step is impractical. Instead, the action is treated as a constant torque applied to the wheel at each substep.
-<h2>Run Example</h2>
 
+<h2>Run Example</h2>
+<h3>Simple case</h3>
 You can run an example where the wheel's actions are sampled from a normal distribution, with the magnitude of the action being proportional to the distance to the target in the x-direction.
 ```.py
 python run_simulator.py
 ```
+![simple](https://github.com/user-attachments/assets/b7b80e2f-5a04-4e8d-869c-c2178b69b3fc)
 
-<h1>TODO</h1>
+<h3>Mario mode</h3>
+The simulation scene may be large, requiring significant memory to simulate the entire scene. However, most of the sand particles remain static since there is no dynamic actor (e.g., a wheel) present. To save memory, we use a moving window that simulates only the particles near the wheel. In each iteration, the simulator extracts the local state from the global state to input into the MPM simulator. After each simulation step, the global state is updated. To enable this feature, set `mario=True` when initializing `env`:
 
-1. Mario simulation marching
-2. Observation Func
+```.py
+env = utils.Environment(state, mpm_solver=mpm, mario=True)
+```
+
+The following animation shows the simulation scope follows the wheel location.
+
+![mario_local](https://github.com/user-attachments/assets/a2a626da-79be-4e09-99d8-b2ae2b05b8cd)|
+
+You can run this example by running:
+
+`python run_mario.py` 
+
+<h4>Auxiliary Simulation Window</h4>
+
+Main Simulation Window            |  Main + Aux
+:-------------------------:|:-------------------------:
+![mario_global](https://github.com/user-attachments/assets/36b1d035-7927-4169-b86e-63fa5c247fac)|![mario_aux](https://github.com/user-attachments/assets/97c449d7-7026-4452-8cf2-94b0ff4709c1)
