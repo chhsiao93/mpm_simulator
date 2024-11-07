@@ -3,9 +3,14 @@ import math
 import os
 import imageio
 
-def curve_function(x, offset=0, min_val=0.1, max_val=0.3, frequency=3):
+def curve_function(x, offset=0, min_val=0.15, max_val=0.3, frequency=3):
+    # combination of two sine waves
     
-    return min_val + (max_val - min_val) * (0.5 + 0.5 * np.sin(frequency * (x + offset)))
+    # return min_val + (max_val - min_val) * (0.5 + 0.5 * np.sin(frequency * (x + offset)) + 0.5 * np.sin(2*frequency * (x + offset)))
+    sine_wave1 = np.sin(frequency * (x + offset))
+    sine_wave2 = np.sin(2 * frequency * (x + offset))
+    combined_wave = 0.5 + 0.5 * sine_wave1 + 0.5 * sine_wave2
+    return min_val + (max_val - min_val) * combined_wave
     
 def add_curve_terrain(dx, sample_density=None, min_val=0.2, max_val=0.4, dim=2):
 
@@ -87,6 +92,39 @@ def random_point_in_unit_spike(sides, radius, width, num_particles=1):
 
 ### add spikes - end
 
+def create_long_terrain_scene(dim = 2, dx=1/64, density_scale=1):
+    material_water = 0
+    material_elastic = 1
+    material_snow = 2
+    material_sand = 3
+    material_stationary = 4
+    objs = {
+        'terrain': 0,
+        'wheel': 1,
+    }
+    # Create initial state of wheel and sand
+    mat = np.array([]) # material list
+    clr = np.array([]) # color list
+    obj = np.array([]) # object list
+    cube = add_cube(lower_corner=[0.5, 0.5], 
+                            cube_size=[0.1, 0.1], 
+                            dx=dx, sample_density=2*dim**density_scale, 
+                            dim=dim)
+    mat = np.append(mat, np.ones(cube.shape[0]) * material_elastic)
+    clr = np.append(clr, np.ones(cube.shape[0]) * 0xFFFFFF)
+    obj = np.append(obj, np.ones(cube.shape[0]) * objs['wheel'])
+    xps = cube
+    scene = {}
+    scene['num_particles'] = xps.shape[0]
+    scene['pos'] = xps.astype(np.float32)
+    scene['vel'] = np.zeros_like(xps).astype(np.float32) + np.array([1.0, 0.5]).astype(np.float32)
+    scene['material'] = mat.astype(np.int32)
+    scene['color'] = clr.astype(np.int32)
+    scene['object'] = obj.astype(np.int32)
+    scene['C_np'] = np.zeros((scene['num_particles'], 2, 2)).astype(np.float32)
+    scene['F_np'] = np.tile(np.eye(2), (scene['num_particles'], 1, 1)).astype(np.float32)
+    scene['J_np'] = (np.ones_like(mat) * (mat!=material_sand)).astype(np.float32)
+    return scene
 def create_wheel_scene(dim = 2, dx=1/64, density_scale=1):
     material_water = 0
     material_elastic = 1
@@ -190,3 +228,125 @@ def png_to_gif(png_dir, output_file, fps):
     for filename in png_files:
         images.append(imageio.imread(filename))
     imageio.mimsave(output_file, images, duration=1000*1/fps)
+
+# environment object
+class Environment():
+    def __init__(self, global_state, mpm_solver, offset=0.0, buffer=0.03, target=[0.5, 0.2], mario=False):
+        self.global_state = global_state
+        self.offset = offset
+        self.buffer = buffer
+        self.local_state = {}
+        self.observation = {'wheel_pos': None, 
+                            'wheel_vel': None, 
+                            'wheel_omega': None,
+                            'dist_to_target': None}
+        self.initial_wheel_center = np.mean(self.global_state['pos'][self.global_state['object'] == 1], axis=0)
+        self.action = 0.0
+        self.mpm = mpm_solver
+        self.target = self.mpm.target
+        self.sim_size = 1.0 # currently only support [0-1] simualtion size
+        self.max_num_particles = self.mpm.max_num_particles
+        self.mario = mario # simulation window follows the wheel center if True
+        # initialize observation
+        self.local_state, _ = self.find_local_state()
+        self.observe(self.local_state)
+
+    
+    def find_local_state(self):
+        local_state = {}
+        # find particles in the window
+        mask = (self.global_state['pos'][:, 0] > self.offset+self.buffer) & (self.global_state['pos'][:, 0] < self.offset+self.sim_size-self.buffer) & (self.global_state['pos'][:, 1] > self.buffer) & (self.global_state['pos'][:, 1] < self.sim_size-self.buffer)
+        local_state['num_particles'] = mask.sum()
+        local_state['pos'] = self.global_state['pos'][mask]
+        local_state['vel'] = self.global_state['vel'][mask]
+        local_state['material'] = self.global_state['material'][mask]
+        local_state['color'] = self.global_state['color'][mask]
+        local_state['object'] = self.global_state['object'][mask]
+        local_state['C_np'] = self.global_state['C_np'][mask]
+        local_state['F_np'] = self.global_state['F_np'][mask]
+        local_state['J_np'] = self.global_state['J_np'][mask]
+        return local_state, mask
+    
+    def update_global_state(self, local_state, mask):
+        local_num_particles = local_state['num_particles']
+        assert mask.sum() == local_num_particles
+        self.global_state['pos'][mask] = local_state['pos'][:local_num_particles]
+        self.global_state['vel'][mask] = local_state['vel'][:local_num_particles]
+        self.global_state['material'][mask] = local_state['material'][:local_num_particles]
+        self.global_state['color'][mask] = local_state['color'][:local_num_particles]
+        self.global_state['object'][mask] = local_state['object'][:local_num_particles]
+        self.global_state['C_np'][mask] = local_state['C_np'][:local_num_particles]
+        self.global_state['F_np'][mask] = local_state['F_np'][:local_num_particles]
+        self.global_state['J_np'][mask] = local_state['J_np'][:local_num_particles]
+        
+    def compute_com_velocity(self, pos, vel):
+        # Calculate the center of mass position and velocity in 2D
+        r_com = np.mean(pos, axis=0)
+        v_com = np.mean(vel, axis=0)
+        return r_com, v_com
+
+    def compute_omega(self, pos, vel, r_com, v_com):
+        # Relative position and velocity with respect to the COM in 2D
+        r_rel = pos - r_com  # Shape: (N, 2)
+        v_rel = vel - v_com  # Shape: (N, 2)
+        
+        # Compute the perpendicular component of the cross product (z-component in 3D)
+        omega_numerator = np.sum(r_rel[:, 0] * v_rel[:, 1] - r_rel[:, 1] * v_rel[:, 0])
+        
+        # Compute the sum of squared magnitudes of r_rel for the denominator
+        omega_denominator = np.sum(r_rel[:, 0]**2 + r_rel[:, 1]**2)
+        
+        # Calculate omega (scalar angular velocity around the z-axis)
+        omega = omega_numerator / omega_denominator if omega_denominator != 0 else 0.0
+        
+        return omega
+    
+    def observe(self, local_state):
+        # compute current wheel omega, velocity, position
+        wheel_particle_pos = local_state['pos'][local_state['object'] == 1]
+        wheel_particle_vel = local_state['vel'][local_state['object'] == 1]
+        r_com, v_com = self.compute_com_velocity(wheel_particle_pos, wheel_particle_vel)
+        omega = self.compute_omega(wheel_particle_pos, wheel_particle_vel, r_com, v_com)
+        # compute distance between target and current wheel center
+        dist_to_target = self.target - r_com
+        self.observation['dist_to_target'] = dist_to_target
+        self.observation['wheel_pos'] = r_com
+        self.observation['wheel_vel'] = v_com
+        self.observation['wheel_omega'] = omega
+        
+    def step(self, action, n_substeps=100, observation=True):
+        self.action = action
+        self.local_state, mask = self.find_local_state()
+        assert self.local_state['num_particles'] > 0, "No particles in the window"
+        assert self.local_state['num_particles'] <= self.max_num_particles ,f"Number of particles in the window is {self.local_state['num_particles']}, which is larger than the maximum number of particles {self.max_num_particles}"
+        self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] - self.offset # map to local coordinate
+        self.local_state = self.mpm.step(self.local_state, action=self.action, n_substeps=n_substeps)
+        self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] + self.offset # map back to global coordinate
+        self.update_global_state(self.local_state, mask)
+        if observation:
+            self.observe(self.local_state)
+        if self.mario:
+            self.offset = (self.observation['wheel_pos'][0] - self.initial_wheel_center[0]) # update offset of window to follow the wheel
+        
+    def adjust_step(self, n_substeps=100):
+        # fix left side of the observation window
+        if self.offset > 1.0: 
+            self.offset -= 1.0
+            self.local_state, mask = self.find_local_state()
+            assert self.local_state['num_particles'] > 0, "No particles in the window"
+            self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] - self.offset # map to local coordinate
+            self.local_state = self.mpm.step(self.local_state, action=0.0, n_substeps=n_substeps)
+            self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] + self.offset # map back to global coordinate
+            self.update_global_state(self.local_state, mask)
+            self.offset += 1.0
+        # fix right side of the observation window
+        if self.offset < 5.0: 
+            self.offset += 1.0
+            self.local_state, mask = self.find_local_state()
+            assert self.local_state['num_particles'] > 0, "No particles in the window"
+            self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] - self.offset # map to local coordinate
+            self.local_state = self.mpm.step(self.local_state, action=0.0, n_substeps=n_substeps)
+            self.local_state['pos'][:, 0] = self.local_state['pos'][:, 0] + self.offset # map back to global coordinate
+            self.update_global_state(self.local_state, mask)
+            self.offset -= 1.0
+        self.local_state, mask = self.find_local_state() # recompute local state
