@@ -3,6 +3,7 @@ import taichi as ti
 import numpy as np
 import utils
 import time
+from surface_obs import surface_observation, fit_func
 target1 = [2.5,0.2]
 target2 = [1.5,0.2]
 # initialize taichi
@@ -13,7 +14,7 @@ mpm = MPMSolver(dim=2,
             dt=1e-4,
             target=target1)
 # create environment object
-global_state = np.load('scene/long_terrain_scene.npz', allow_pickle=True) # load the scene
+global_state = np.load('scene/color_terrain_scene.npz', allow_pickle=True) # load the scene
 global_state = dict(global_state)
 offset = 0.0
 env = utils.Environment(global_state, mpm_solver=mpm, offset=offset, buffer=0.03, mario=True)
@@ -24,7 +25,7 @@ gui = ti.GUI("MPM Solver - Wheel Playground", (640, 640), background_color=0x112
 # action function
 def action_fn(observation):
     dist_vec = observation['dist_to_target']
-    return np.clip(0.1*(np.random.normal(-dist_vec[0], 0.2)), -0.03, 0.03)
+    return np.clip(0.1*(np.random.normal(-dist_vec[0], 0.2)), -0.02, 0.02)
 
 for frame in range(300):
     #### simulation ####
@@ -33,7 +34,7 @@ for frame in range(300):
     # forward simulation and get new state
     env.step(action, n_substeps=100)
     # additional window outside the observation window
-    env.adjust_step(n_substeps=100)
+    # env.adjust_step(n_substeps=100)
     
     
     
@@ -54,12 +55,18 @@ for frame in range(300):
     clr_np= env.local_state['color']
     mat_np = env.local_state['material']
     wheel_center_local = np.mean(x_np[env.local_state['object'] == 1], axis=0) # center of the wheel in local coordinate
+
+    
     # plot particles
     gui.circles(x_np, color=clr_np, radius=1.5) # particle positions at frame s
     gui.circle(wheel_center_local, radius=5, color=0xFF0000) # center of the wheel
     gui.circle(target1-np.array([offset, 0]), radius=5, color=0x3f8f29) # target position
     gui.circle(target2-np.array([offset, 0]), radius=5, color=0x3f8f29) # target position
     gui.circle(env.target-np.array([offset, 0]), radius=5, color=0xde1a24) # target position
+    # plot surface observation
+    gui.circles(env.observation['obs_xy']-np.array([offset, 0]), color=0x000000, radius=6) # observation points
+    # gui.lines(begin=polar_xy[:-1], end=polar_xy[1:], radius=3, color=0xfcba03) # polar observation
+    # gui.lines(begin=poly_xy[:-1], end=poly_xy[1:], radius=3, color=0x03b6fc) # xy observation
     # generate grid for global coordinate
     begins = np.array([[i, 0] for i in np.linspace(0, 1, 11)]) - np.array([offset, 0])%0.1
     ends = np.array([[i, 1] for i in np.linspace(0, 1, 11)]) - np.array([offset, 0])%0.1

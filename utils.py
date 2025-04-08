@@ -248,6 +248,8 @@ class Environment():
         self.max_num_particles = self.mpm.max_num_particles
         self.mario = mario # simulation window follows the wheel center if True
         # initialize observation
+        self.surface_sample_angle = 5
+        self.surface_min_observation = 5
         self.local_state, _ = self.find_local_state()
         self.observe(self.local_state)
 
@@ -300,7 +302,32 @@ class Environment():
         omega = omega_numerator / omega_denominator if omega_denominator != 0 else 0.0
         
         return omega
-    
+    def surface_observation(self, sand_pos, camera, sample_angle_degree=5, min_observation=5):
+        # calculate the distance from the camera to the sand position
+        distance = np.linalg.norm(sand_pos - camera, axis=1)
+        # calculate the angle between the camera and the sand position
+        angle = np.arctan2(sand_pos[:,1] - camera[1], sand_pos[:,0] - camera[0])
+        # convert the angle to degree
+        angle = np.degrees(angle)
+        angle = np.floor(angle / sample_angle_degree) * sample_angle_degree    
+        unique_angle, counts = np.unique(angle, return_counts=True)   
+        # remove the angle with less than min_observation
+        unique_angle = unique_angle[counts >= min_observation]
+        # for every sample degrees, we choose the closest point
+        obs_xy = np.array([sand_pos[angle == t][np.argmin(distance[angle == t])] for t in unique_angle])
+        # convert xy to polar coordinates
+        obs_distance = np.array([distance[angle == t][np.argmin(distance[angle == t])] for t in unique_angle])
+        obs_angle = np.array([angle[angle == t][np.argmin(distance[angle == t])] for t in unique_angle])
+        obs_polar = np.array([obs_angle, obs_distance]).T # (theta, r)
+        return obs_xy, obs_polar
+
+    def fit_func(self, obs_data, degree=5):
+        # fit a polynomial to the data
+        coeffs = np.polyfit(obs_data[:, 0], obs_data[:, 1], degree)
+        # create a polynomial function
+        poly = np.poly1d(coeffs)
+        
+        return coeffs, poly
     def observe(self, local_state):
         # compute current wheel omega, velocity, position
         wheel_particle_pos = local_state['pos'][local_state['object'] == 1]
@@ -309,10 +336,17 @@ class Environment():
         omega = self.compute_omega(wheel_particle_pos, wheel_particle_vel, r_com, v_com)
         # compute distance between target and current wheel center
         dist_to_target = self.target - r_com
+        # surface observation
+        sand_pos = local_state['pos'][local_state['material'] == 3] # sand particles
+        camera = r_com
+        obs_xy, obs_polar = self.surface_observation(sand_pos, camera,sample_angle_degree=self.surface_sample_angle, min_observation=self.surface_min_observation)
+        
         self.observation['dist_to_target'] = dist_to_target
         self.observation['wheel_pos'] = r_com
         self.observation['wheel_vel'] = v_com
         self.observation['wheel_omega'] = omega
+        self.observation['obs_xy'] = obs_xy
+        self.observation['obs_polar'] = obs_polar
         
     def step(self, action, n_substeps=100, observation=True):
         self.action = action
