@@ -48,6 +48,7 @@ class WheelSandEnv(gym.Env):
         # initialize observation
         self.local_state, _ = self.find_local_state()
         self.observe(self.local_state)
+        self.initial_distance = self._get_info()['distance']
         
     def _get_obs(self):
         return {"agent": self._agent_location, "target": self._target_location, "velocity": self._velocity, "omega": self._omega}
@@ -142,6 +143,7 @@ class WheelSandEnv(gym.Env):
         self._omega = omega
         
     def step(self, action, n_substeps=100):
+        previous_distance = self._get_info()['distance']
         # Map the action (element of {0,1,2,3,4}) to the direction we walk in
         self.action = self._action_to_direction[action]
         self.local_state, mask = self.find_local_state()
@@ -156,13 +158,17 @@ class WheelSandEnv(gym.Env):
         self.observe(self.local_state)
         if self.mario:
             self.offset = np.clip((self._agent_location[0] - 0.5), 0, self.size-0.5) # update offset of window to follow the wheel
-            
+        
+        
 
         # An environment is completed if and only if the agent has reached the target
         terminated = np.abs(self._agent_location - self._target_location)[0] < 0.02
         truncated = False
         reward = 100 if terminated else 0  # the agent is only reached at the end of the episode
-        reward += -0.1 * np.linalg.norm(self._agent_location - self._target_location)  # the agent is penalized for being far from the target
+        # the agent is rewarded for being close to the target
+        current_distance = self._get_info()['distance']
+        reward += (previous_distance - current_distance)/self.initial_distance # the agent is rewarded for getting closer to the target
+        
         observation = self._get_obs()
         info = self._get_info()
 

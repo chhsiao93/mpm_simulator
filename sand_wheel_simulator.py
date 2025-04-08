@@ -46,7 +46,8 @@ class MPMSolver:
         # Sand parameters
         friction_angle = 45.0
         sin_phi = math.sin(math.radians(friction_angle))
-        self.alpha = math.sqrt(2 / 3) * 2 * sin_phi / (3 - sin_phi)
+        # self.alpha = math.sqrt(2 / 3) * 2 * sin_phi / (3 - sin_phi)
+        self.alpha = ti.field(dtype=ti.f32, shape=(self.max_num_particles,))
 
         self.x = ti.Vector.field(self.dim,
                             dtype=ti.f32,
@@ -132,7 +133,7 @@ class MPMSolver:
         else:
             self.Jp[p] = 0.0
                 
-            delta_gamma = epsilon_hat_norm + (self.dim * self.lambda_0 + 2 * self.mu_0) / (2 * self.mu_0) * tr * self.alpha #[None]
+            delta_gamma = epsilon_hat_norm + (self.dim * self.lambda_0 + 2 * self.mu_0) / (2 * self.mu_0) * tr * self.alpha[p]#[None]
             for i in ti.static(range(self.dim)):
                 sigma_out[i, i] =  ti.exp(epsilon[i]- max(0, delta_gamma) / epsilon_hat_norm * epsilon_hat[i])
         return sigma_out
@@ -274,6 +275,9 @@ class MPMSolver:
         self.F[i] = F
         self.Jp[i] = J
         self.C[i] = C
+        # compute alpha
+        sin_phi = ti.sin(ti.math.radians(object))
+        self.alpha[i] = ti.sqrt(2 / 3) * 2 * sin_phi / (3 - sin_phi)
 
     
     def substep(self):
